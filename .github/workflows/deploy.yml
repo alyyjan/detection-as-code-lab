@@ -1,0 +1,33 @@
+name: Deploy Rules to WAZUH
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Deploy to WAZUH
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.WAZUH_SSH_KEY }}" > ~/.ssh/wazuh_key
+          chmod 600 ~/.ssh/wazuh_key
+          ssh-keyscan -H ${{ secrets.WAZUH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Copy rules to WAZUH
+        run: |
+          scp -i ~/.ssh/wazuh_key -r \
+            rules/ \
+            ${{ secrets.WAZUH_USER }}@${{ secrets.WAZUH_HOST }}:/var/ossec/etc/rules/
+
+      - name: Restart WAZUH manager
+        run: |
+          ssh -i ~/.ssh/wazuh_key \
+            ${{ secrets.WAZUH_USER }}@${{ secrets.WAZUH_HOST }} \
+            "systemctl restart wazuh-manager && systemctl status wazuh-manager"
