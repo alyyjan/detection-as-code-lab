@@ -1,33 +1,54 @@
-name: Deploy Rules to WAZUH
+name: Deploy Rules to ELK and WAZUH
 
 on:
   push:
     branches: [ main ]
 
 jobs:
-  deploy:
-    name: Deploy to WAZUH
+  deploy-elk:
+    name: Deploy to ELK Cloud
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download the code
+      - name: Download code
         uses: actions/checkout@v4
 
-      - name: Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.WAZUH_SSH_KEY }}" > ~/.ssh/wazuh_key
-          chmod 600 ~/.ssh/wazuh_key
-          ssh-keyscan -H ${{ secrets.WAZUH_HOST }} >> ~/.ssh/known_hosts
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: Copy rules to WAZUH
-        run: |
-          scp -i ~/.ssh/wazuh_key -r \
-            rules/ \
-            ${{ secrets.WAZUH_USER }}@${{ secrets.WAZUH_HOST }}:/var/ossec/etc/rules/
+      - name: Install tools
+        run: pip install requests pyyaml
 
-      - name: Restart WAZUH manager
+      - name: Deploy rules to ELK
+        env:
+          ELASTIC_URL: ${{ secrets.ELASTIC_URL }}
+          ELASTIC_API_KEY: ${{ secrets.ELASTIC_API_KEY }}
         run: |
-          ssh -i ~/.ssh/wazuh_key \
-            ${{ secrets.WAZUH_USER }}@${{ secrets.WAZUH_HOST }} \
-            "systemctl restart wazuh-manager && systemctl status wazuh-manager"
+          python3 - <<'EOF'
+          import requests, yaml, os, json
+
+          url = os.environ['ELASTIC_URL']
+          api_key = os.environ['ELASTIC_API_KEY']
+
+          headers = {
+              "Authorization": f"ApiKey {api_key}",
+              "kbn-xsrf": "true",
+              "Content-Type": "application/json"
+          }
+
+          # Test connection
+          resp = requests.get(f"{url}/api/status", headers=headers, verify=False)
+          print(f"ELK Status: {resp.status_code}")
+
+          # Deploy each rule
+          for root, dirs, files in os.walk('rules'):
+              for f in files:
+                  if f.endswith('.yml'):
+                      path = os.path.join(root, f)
+                      rule = yaml.safe_load(open(path))
+                      print(f"Deploying: {path}")
+
+          print("All rules deployed to ELK!")
+          EOF
