@@ -1,0 +1,24 @@
+title: Suspicious PowerShell Encoded Command
+id: a5f23a3a-d7c4-11ed-afa1-0242ac120002
+status: test
+description: Detects PowerShell execution with Base64 encoded commands used by attackers
+author: Muhammad Ali
+date: 2024/01/15
+tags:
+  - attack.execution
+  - attack.t1059.001
+logsource:
+  category: process_creation
+  product: windows
+detection:
+  selection:
+    Image|endswith: '\powershell.exe'
+    CommandLine|contains:
+      - '-EncodedCommand'
+      - '-enc '
+      - '-ec '
+  condition: selection
+falsepositives:
+  - Legitimate admin scripts
+  - Software deployment tools
+level: high
