@@ -3,10 +3,12 @@ name: Deploy Rules to ELK and WAZUH
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
-  deploy-elk:
-    name: Deploy to ELK Cloud
+  validate-and-deploy:
+    name: Validate and Deploy Rules
     runs-on: ubuntu-latest
 
     steps:
@@ -21,34 +23,30 @@ jobs:
       - name: Install tools
         run: pip install requests pyyaml
 
-      - name: Deploy rules to ELK
-        env:
-          ELASTIC_URL: ${{ secrets.ELASTIC_URL }}
-          ELASTIC_API_KEY: ${{ secrets.ELASTIC_API_KEY }}
+      - name: Validate YAML syntax
         run: |
-          python3 - <<'EOF'
-          import requests, yaml, os, json
-
-          url = os.environ['ELASTIC_URL']
-          api_key = os.environ['ELASTIC_API_KEY']
-
-          headers = {
-              "Authorization": f"ApiKey {api_key}",
-              "kbn-xsrf": "true",
-              "Content-Type": "application/json"
-          }
-
-          # Test connection
-          resp = requests.get(f"{url}/api/status", headers=headers, verify=False)
-          print(f"ELK Status: {resp.status_code}")
-
-          # Deploy each rule
+          python -c "
+          import yaml, os, sys
+          errors = []
           for root, dirs, files in os.walk('rules'):
               for f in files:
                   if f.endswith('.yml'):
                       path = os.path.join(root, f)
-                      rule = yaml.safe_load(open(path))
-                      print(f"Deploying: {path}")
+                      try:
+                          yaml.safe_load(open(path))
+                          print(f'PASS: {path}')
+                      except Exception as e:
+                          errors.append(f'FAIL: {path} - {e}')
+          if errors:
+              [print(e) for e in errors]
+              sys.exit(1)
+          print('All rules passed!')
+          "
 
-          print("All rules deployed to ELK!")
-          EOF
+      - name: Deploy to ELK Cloud
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        env:
+          ELASTIC_URL: ${{ secrets.ELASTIC_URL }}
+          ELASTIC_API_KEY: ${{ secrets.ELASTIC_API_KEY }}
+        run: |
+          python3 scripts/deploy_elk.py
