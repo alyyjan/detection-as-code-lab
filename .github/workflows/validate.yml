@@ -1,0 +1,62 @@
+name: Validate Detection Rules
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-rules:
+    name: Check All Rules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tools
+        run: pip install PyYAML
+
+      - name: Check YAML syntax
+        run: |
+          python -c "
+          import yaml, os, sys
+          errors = []
+          for root, dirs, files in os.walk('rules'):
+              for f in files:
+                  if f.endswith('.yml'):
+                      path = os.path.join(root, f)
+                      try:
+                          yaml.safe_load(open(path))
+                          print(f'PASS: {path}')
+                      except Exception as e:
+                          errors.append(f'FAIL: {path} - {e}')
+          if errors:
+              [print(e) for e in errors]
+              sys.exit(1)
+          print('All rules passed!')
+          "
+
+      - name: Check required fields
+        run: |
+          python -c "
+          import yaml, os, sys
+          required = ['title','id','description','author','tags','detection','level']
+          errors = []
+          for root, dirs, files in os.walk('rules'):
+              for f in files:
+                  if f.endswith('.yml'):
+                      path = os.path.join(root, f)
+                      data = yaml.safe_load(open(path))
+                      for field in required:
+                          if field not in data:
+                              errors.append(f'MISSING [{field}] in {path}')
+          if errors:
+              [print(e) for e in errors]
+              sys.exit(1)
+          print('All fields present!')
+          "
